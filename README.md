@@ -54,7 +54,7 @@
 
 1. 克隆项目
 ```bash
-git clone [项目地址]
+git clone https://github.com/guo-gy/containloading
 cd containloading
 ```
 
@@ -108,10 +108,6 @@ java -jar target/container-loading-1.0-SNAPSHOT.jar
 - 圆柱体数量建议不超过100个
 - 所有尺寸单位均为米(m)
 
-## 许可证
-
-[添加许可证信息]
-
 ## 联系方式
 
-[添加联系方式] 
+cn.ggy@qq.com
