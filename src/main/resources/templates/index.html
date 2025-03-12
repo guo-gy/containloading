@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>3D装箱模拟系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        canvas { display: block; }
+        #container { width: 100%; height: 100vh; }
+        
+        .panel {
+            position: fixed;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        #controls {
+            top: 20px;
+            left: 20px;
+            width: 280px;
+        }
+        
+        #info-panel {
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            display: none;
+        }
+        
+        .panel h2 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 18px;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 8px;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-size: 14px;
+        }
+        
+        input[type="number"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        input[type="file"] {
+            padding: 5px;
+            background: #f9f9f9;
+        }
+        
+        button {
+            width: 100%;
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 15px;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        .info-item {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        
+        .info-label {
+            color: #666;
+            font-size: 13px;
+        }
+        
+        .info-value {
+            color: #333;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px 40px;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        #camera-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px 20px;
+            border-radius: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            gap: 15px;
+        }
+        
+        .camera-btn {
+            padding: 8px 15px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.3s;
+        }
+        
+        .camera-btn:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="controls" class="panel">
+        <h2>装箱参数设置</h2>
+        <form id="uploadForm">
+            <div class="form-group">
+                <label>Excel文件（货物数据）</label>
+                <input type="file" name="file" accept=".xlsx,.xls" required>
+            </div>
+            <div class="form-group">
+                <label>集装箱长度 (m)</label>
+                <input type="number" name="length" required step="0.1" value="10">
+            </div>
+            <div class="form-group">
+                <label>集装箱宽度 (m)</label>
+                <input type="number" name="width" required step="0.1" value="10">
+            </div>
+            <div class="form-group">
+                <label>集装箱高度 (m)</label>
+                <input type="number" name="height" required step="0.1" value="10">
+            </div>
+            <button type="submit">开始模拟装箱</button>
+        </form>
+    </div>
+    
+    <div id="info-panel" class="panel">
+        <h2>装箱信息</h2>
+        <div class="info-item">
+            <div class="info-label">货物总数</div>
+            <div class="info-value" id="total-cylinders">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">集装箱体积</div>
+            <div class="info-value" id="container-volume">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">货物总体积</div>
+            <div class="info-value" id="total-volume">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">空间利用率</div>
+            <div class="info-value" id="volume-usage">-</div>
+        </div>
+    </div>
+    
+    <div id="camera-controls">
+        <button class="camera-btn" onclick="setCamera('front')">前视图</button>
+        <button class="camera-btn" onclick="setCamera('side')">侧视图</button>
+        <button class="camera-btn" onclick="setCamera('top')">俯视图</button>
+        <button class="camera-btn" onclick="setCamera('iso')">等轴视图</button>
+    </div>
+    
+    <div class="loading" id="loading">正在计算装箱方案...</div>
+
+    <script>
+        let scene, camera, renderer, controls;
+        let container;
+
+        function init() {
+            // 创建场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f0f0);
+
+            // 创建相机
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(20, 20, 20);
+
+            // 创建渲染器
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                alpha: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // 添加轨道控制
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // 添加环境光和方向光
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 10);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            // 添加环境光球，增强玻璃效果
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+            hemiLight.position.set(0, 20, 0);
+            scene.add(hemiLight);
+
+            // 添加坐标轴辅助
+            const axesHelper = new THREE.AxesHelper(5);
+            scene.add(axesHelper);
+
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function setCamera(view) {
+            const length = parseFloat(document.querySelector('input[name="length"]').value);
+            const width = parseFloat(document.querySelector('input[name="width"]').value);
+            const height = parseFloat(document.querySelector('input[name="height"]').value);
+            const maxDim = Math.max(length, width, height);
+            
+            switch(view) {
+                case 'front':
+                    camera.position.set(0, 0, maxDim * 2);
+                    break;
+                case 'side':
+                    camera.position.set(maxDim * 2, 0, 0);
+                    break;
+                case 'top':
+                    camera.position.set(0, maxDim * 2, 0);
+                    break;
+                case 'iso':
+                    camera.position.set(maxDim, maxDim, maxDim);
+                    break;
+            }
+            
+            camera.lookAt(length/2, height/2, width/2);
+            controls.target.set(length/2, height/2, width/2);
+        }
+
+        function createContainer(length, width, height) {
+            // 创建半透明玻璃箱体
+            const boxGeometry = new THREE.BoxGeometry(length, height, width);
+            const glassMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                metalness: 0.1,
+                roughness: 0.1,
+                transparent: true,
+                opacity: 0.2,
+                side: THREE.DoubleSide,
+                envMapIntensity: 1.0,
+                clearcoat: 1.0,
+                clearcoatRoughness: 0.1
+            });
+            const glassBox = new THREE.Mesh(boxGeometry, glassMaterial);
+            glassBox.position.set(length/2, height/2, width/2);
+            scene.add(glassBox);
+
+            // 创建边框线条
+            const edges = [
+                // 底部四条边
+                [0,0,0, length,0,0],
+                [length,0,0, length,0,width],
+                [length,0,width, 0,0,width],
+                [0,0,width, 0,0,0],
+                // 顶部四条边
+                [0,height,0, length,height,0],
+                [length,height,0, length,height,width],
+                [length,height,width, 0,height,width],
+                [0,height,width, 0,height,0],
+                // 竖直四条边
+                [0,0,0, 0,height,0],
+                [length,0,0, length,height,0],
+                [length,0,width, length,height,width],
+                [0,0,width, 0,height,width]
+            ];
+
+            const geometry = new THREE.BufferGeometry();
+            const vertices = new Float32Array(edges.flat());
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            
+            const lineMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x4CAF50,
+                linewidth: 2
+            });
+            const lineSegments = new THREE.LineSegments(geometry, lineMaterial);
+            scene.add(lineSegments);
+        }
+
+        function createCylinder(cylinder) {
+            const geometry = new THREE.CylinderGeometry(
+                cylinder.radius,
+                cylinder.radius,
+                cylinder.height,
+                32
+            );
+            const material = new THREE.MeshPhongMaterial({
+                color: cylinder.color || 0x808080,
+                shininess: 30
+            });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(cylinder.x, cylinder.z + cylinder.height/2, cylinder.y);
+            scene.add(mesh);
+            return mesh;
+        }
+
+        function clearScene() {
+            while(scene.children.length > 0) { 
+                scene.remove(scene.children[0]); 
+            }
+        }
+
+        function updateInfoPanel(cylinders, containerDims) {
+            const containerVolume = containerDims.length * containerDims.width * containerDims.height;
+            let totalCylinderVolume = 0;
+            
+            cylinders.forEach(cylinder => {
+                totalCylinderVolume += Math.PI * cylinder.radius * cylinder.radius * cylinder.height;
+            });
+            
+            document.getElementById('total-cylinders').textContent = cylinders.length + ' 个';
+            document.getElementById('container-volume').textContent = containerVolume.toFixed(2) + ' m³';
+            document.getElementById('total-volume').textContent = totalCylinderVolume.toFixed(2) + ' m³';
+            document.getElementById('volume-usage').textContent = 
+                ((totalCylinderVolume / containerVolume) * 100).toFixed(2) + '%';
+            
+            document.getElementById('info-panel').style.display = 'block';
+        }
+
+        // 初始化3D场景
+        init();
+
+        // 处理窗口大小变化
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // 处理表单提交
+        document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const loading = document.getElementById('loading');
+            
+            try {
+                loading.style.display = 'block';
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const cylinders = await response.json();
+                    
+                    // 清除现有场景
+                    clearScene();
+                    
+                    // 重新创建场景基本元素
+                    const axesHelper = new THREE.AxesHelper(5);
+                    scene.add(axesHelper);
+                    
+                    // 添加环境光和方向光
+                    const ambientLight = new THREE.AmbientLight(0x404040);
+                    scene.add(ambientLight);
+                    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+                    directionalLight.position.set(1, 1, 1);
+                    scene.add(directionalLight);
+                    
+                    const containerDims = {
+                        length: parseFloat(formData.get('length')),
+                        width: parseFloat(formData.get('width')),
+                        height: parseFloat(formData.get('height'))
+                    };
+                    
+                    // 创建集装箱
+                    createContainer(
+                        containerDims.length,
+                        containerDims.width,
+                        containerDims.height
+                    );
+                    
+                    // 创建圆柱体
+                    cylinders.forEach(createCylinder);
+                    
+                    // 更新信息面板
+                    updateInfoPanel(cylinders, containerDims);
+                    
+                    // 设置等轴视图
+                    setCamera('iso');
+                    
+                    alert('装箱方案生成完成！结果已保存到result.xlsx');
+                } else {
+                    alert('上传失败：' + response.statusText);
+                }
+            } catch (error) {
+                alert('发生错误：' + error.message);
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html> 
