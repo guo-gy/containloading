@@ -107,7 +107,3 @@ java -jar target/container-loading-1.0-SNAPSHOT.jar
 - Excel文件大小不要超过10MB
 - 圆柱体数量建议不超过100个
 - 所有尺寸单位均为米(m)
-
-## 联系方式
-
-cn.ggy@qq.com
