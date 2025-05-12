@@ -162,6 +162,16 @@
                 <label>集装箱高度 (m)</label>
                 <input type="number" name="height" required step="0.1" value="10">
             </div>
+            <div class="form-group">
+                <label>装箱策略</label>
+                <select name="strategy" id="strategy" class="form-control">
+                    <option value="volume">大体积优先</option>
+                    <option value="quantity">数量优先</option>
+                    <option value="id">编号优先</option>
+                    <option value="value">价值优先</option>
+                    <option value="valuemax">价值最大化</option>
+                </select>
+            </div>
             <button type="submit">开始模拟装箱</button>
         </form>
     </div>
@@ -169,8 +179,32 @@
     <div id="info-panel" class="panel">
         <h2>装箱信息</h2>
         <div class="info-item">
+            <div class="info-label">使用策略</div>
+            <div class="info-value" id="used-strategy">-</div>
+        </div>
+        <div class="info-item">
             <div class="info-label">货物总数</div>
             <div class="info-value" id="total-cylinders">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">成功放置数量</div>
+            <div class="info-value" id="placed-cylinders">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">未能放置数量</div>
+            <div class="info-value" id="unplaced-cylinders">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">总价值</div>
+            <div class="info-value" id="total-value">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">成功装载价值</div>
+            <div class="info-value" id="placed-value">-</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">价值装载率</div>
+            <div class="info-value" id="value-usage">-</div>
         </div>
         <div class="info-item">
             <div class="info-label">集装箱体积</div>
@@ -348,15 +382,34 @@
             }
         }
 
-        function updateInfoPanel(cylinders, containerDims) {
+        function updateInfoPanel(cylinders, containerDims, unplacedCount, totalCount, strategy) {
             const containerVolume = containerDims.length * containerDims.width * containerDims.height;
             let totalCylinderVolume = 0;
+            let totalValue = 0;
+            let placedValue = 0;
             
             cylinders.forEach(cylinder => {
-                totalCylinderVolume += Math.PI * cylinder.radius * cylinder.radius * cylinder.height;
+                totalValue += cylinder.value || 0;
+                
+                // 只计算成功放置的圆柱体体积和价值
+                if (cylinder.z >= 0) {
+                    totalCylinderVolume += Math.PI * cylinder.radius * cylinder.radius * cylinder.height;
+                    placedValue += cylinder.value || 0;
+                }
             });
             
-            document.getElementById('total-cylinders').textContent = cylinders.length + ' 个';
+            const placedCount = totalCount - unplacedCount;
+            
+            document.getElementById('used-strategy').textContent = strategy || '大体积优先';
+            document.getElementById('total-cylinders').textContent = totalCount + ' 个';
+            document.getElementById('placed-cylinders').textContent = placedCount + ' 个';
+            document.getElementById('unplaced-cylinders').textContent = unplacedCount + ' 个';
+            
+            document.getElementById('total-value').textContent = totalValue.toFixed(2);
+            document.getElementById('placed-value').textContent = placedValue.toFixed(2);
+            document.getElementById('value-usage').textContent = 
+                ((placedValue / totalValue) * 100).toFixed(2) + '%';
+            
             document.getElementById('container-volume').textContent = containerVolume.toFixed(2) + ' m³';
             document.getElementById('total-volume').textContent = totalCylinderVolume.toFixed(2) + ' m³';
             document.getElementById('volume-usage').textContent = 
@@ -375,6 +428,30 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
+        // 在页面加载完成后获取策略列表
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const response = await fetch('/strategies');
+                if (response.ok) {
+                    const strategies = await response.json();
+                    const strategySelect = document.getElementById('strategy');
+                    
+                    // 清除默认选项
+                    strategySelect.innerHTML = '';
+                    
+                    // 添加所有可用策略
+                    Object.entries(strategies).forEach(([key, name]) => {
+                        const option = document.createElement('option');
+                        option.value = key;
+                        option.textContent = name;
+                        strategySelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('获取策略列表失败:', error);
+            }
+        });
+
         // 处理表单提交
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -389,7 +466,11 @@
                 });
                 
                 if (response.ok) {
-                    const cylinders = await response.json();
+                    const result = await response.json();
+                    const cylinders = result.cylinders;
+                    const unplacedCount = result.unplacedCount;
+                    const totalCount = result.totalCount;
+                    const strategy = result.strategy;
                     
                     // 清除现有场景
                     clearScene();
@@ -418,16 +499,27 @@
                         containerDims.height
                     );
                     
-                    // 创建圆柱体
-                    cylinders.forEach(createCylinder);
+                    // 创建圆柱体 - 只展示成功放置的
+                    cylinders.forEach(cylinder => {
+                        // 只渲染成功放置的圆柱体
+                        if (cylinder.z >= 0) {
+                            createCylinder(cylinder);
+                        }
+                    });
                     
                     // 更新信息面板
-                    updateInfoPanel(cylinders, containerDims);
+                    updateInfoPanel(cylinders, containerDims, unplacedCount, totalCount, strategy);
                     
                     // 设置等轴视图
                     setCamera('iso');
                     
-                    alert('装箱方案生成完成！结果已保存到result.xlsx');
+                    let message = '装箱方案生成完成！';
+                    if (unplacedCount > 0) {
+                        message += `\n注意：使用"${strategy}"策略，有${unplacedCount}个圆柱体无法放入容器中。`;
+                    }
+                    message += '\n结果已保存到result.xlsx';
+                    
+                    alert(message);
                 } else {
                     alert('上传失败：' + response.statusText);
                 }
